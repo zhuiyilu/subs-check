@@ -1,0 +1,74 @@
+name: Check, Filter & Publish Subscriptions
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'   # 每 4 小时跑一次，按需调整（最短建议不要低于1小时，避免被限流）
+  workflow_dispatch: {}      # 允许在 Actions 页面手动点击运行
+
+permissions:
+  contents: write
+
+concurrency:
+  group: subs-check
+  cancel-in-progress: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install python deps
+        run: pip install pyyaml --break-system-packages
+
+      - name: Render config from secret (inject sub-urls)
+        env:
+          SUB_URLS: ${{ secrets.SUB_URLS }}
+        run: python3 scripts/render_config.py
+
+      - name: Run subs-check (single round)
+        run: |
+          set -e
+          go run . -f ./config/config.yaml > /tmp/subs-check.log 2>&1 &
+          PID=$!
+          echo "subs-check 已启动（详细日志写在 runner 本地临时文件，不会出现在本日志里）"
+          sleep 1500   # 最多等 25 分钟做一轮检测，节点源多就调大
+          kill $PID 2>/dev/null || true
+          sleep 5
+          echo "---- output 目录文件列表（仅文件名）----"
+          ls -la output || true
+
+      - name: Sanity check output exists
+        run: |
+          test -f output/all.yaml || { echo "未找到 output/all.yaml，检测可能没跑完或配置有误"; exit 1; }
+          test -f output/base64.txt || { echo "未找到 output/base64.txt，请检查是否开启了对应导出"; exit 1; }
+
+      - name: Filter to best N nodes
+        run: |
+          python3 scripts/top100_filter.py \
+            --clash-in output/all.yaml \
+            --v2ray-in output/base64.txt \
+            --clash-out output/clash_top100.yaml \
+            --v2ray-out output/v2ray_top100.txt \
+            --limit 100
+
+      - name: Commit & push results
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update top100 subscriptions [skip ci]"
+          file_pattern: |
+            output/clash_top100.yaml
+            output/v2ray_top100.txt
