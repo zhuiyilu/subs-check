@@ -1,0 +1,24 @@
+# 这是公开的配置模板，刻意不包含任何真实订阅链接。
+# 真正的 sub-urls 列表来自 GitHub Actions Secret（见 scripts/render_config.py），
+# 运行时会被动态拼接进来，生成的最终 config.yaml 不会被提交回仓库。
+
+# sub-urls 字段故意留空 / 不写在这里，由 render_config.py 在运行时注入
+# sub-urls: []
+
+# ===== 并发设置 =====
+concurrent: 50
+
+# ===== 测活 / 测速过滤阈值 =====
+timeout: 5000
+min-speed: 512
+download-timeout: 10
+download-mb: 20
+
+# ===== 流媒体检测（可选） =====
+media-check: false
+
+# ===== 是否丢弃无法访问 Cloudflare 的节点 =====
+drop-bad-cf-nodes: false
+
+# ===== 输出 =====
+save-method: local
